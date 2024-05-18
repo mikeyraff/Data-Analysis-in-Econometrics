@@ -1,0 +1,143 @@
+---
+title: "Econ 695 Problem Set 3"
+output: pdf_document
+---
+
+Your name: Michael Raffanti
+
+Your NetID: raffanti
+
+## Load the data and the packages
+
+To begin with, load the data (and the packages necessary for your work).
+
+```{r, message = FALSE}
+setwd("/Users/mikeyraffanti/Documents/econ695/Problem Set 3")
+data = read.csv("graddy_fish.csv", header = TRUE, sep = ",")
+library(dplyr)
+library(AER)
+library(sandwich)
+library(stargazer)
+library(lmtest)
+```
+
+
+## Question 1
+
+Define $avgprc_t$ as the sum of the price paid by Asians and non-Asians divided by 2 for each time period $t$. Also, define $totqty_t$ as the sum of the quantities purchased by Asians and non-Asians. Then collapse the dataset at the period level, so that the total number of observations is 97 (as opposed to 194).
+
+```{r}
+altered_data = data %>% group_by(t) %>% summarise(avgprct = mean(prc), totqtyt = sum(qty))
+print(dim(altered_data))
+```
+
+
+## Question 2
+
+Assume that the demand equation can be written, in equilibrium for each period, as 
+
+\[
+\log (totqty_t) = \beta_0 + \beta_1 \log(avgprc_t) + \beta_2 mon_t + \beta_3 tue_t + \beta_4 wed_t + \beta_5 thurs_t + u_t,
+\]
+which allows for demand to differ across days of the week. Treating the price variable as endogenous, what additional information do we need to estimate the demand equation parameters consistently?
+
+To estimate the demand equation parameters consistently while treating the price variable as endogenous, we need instrumental variables that are correlated with the endogenous price variable (avgprct) but uncorrelated with the error term (ut) in the demand equation. These instrumental variables should influence the quantity demanded only through their effect on price, ensuring they satisfy both the relevance and the exclusion restrictions. Examples could includ factors that affect supply but are assumed not to directly affect demand, such as weather conditions influencing fish availability at the market, or variables related to the costs of fishing operation that might impact prices without directly influencing consumer demand.
+
+
+## Question 3
+
+The variables $wave2_t$ and $wave3_t$ are measures of ocean wave heights over the past several days. What two assumptions do we need to make in order to use $wave2_t$ and $wave3_t$ as IVs for $\log (avgprc_t)$ in estimating the demand equation?
+
+To use wave2t and wave3t as instrumental variables for log(avgprct) in estimating the demand equation, we need to make two critical assumptions. First, the relevance assumption: wave2t and wave3t must be correlated with log(avgprct), meaing they should meaning they should significantly influence the price of fish at the market, likely through their impact on fish supply. Higher wave heights can affect fishing operations, potentially reducing the supply of fish and thus influencing prices. Second, the exclusion restriction assumption: wave2t and wave3t must not have a direct effect on the demand for fish (log(totqtyt)), independent of their effect on prices. This means that these variables influence the quantity demanded only through their impact on fish prices and do not have a direct relationship with consumer demand for fish. These assumptions ensure that the instrumental variables are valid tools for isolating the exogenous variation in fish prices needed to consistently estimate the demand equation parameters.
+
+## Question 4
+
+### Part 4-A
+
+Regress $\log(avgprc_t)$ on the day-of-the-week dummies and the two wave measures. 
+
+```{r, warning=F}
+final_data = data %>% left_join(altered_data, by = "t")
+model = lm(log(avgprct) ~ mon + tues + wed + thurs + wave2 + wave3, data = final_data)
+print(model)
+```
+
+
+### Part 4-B
+
+Are $wave2_t$ and $wave3_t$ jointly significant? What is the p-value of the test?
+
+```{r, warning=F}
+summary(model)
+```
+
+Considering that the pvalue of the given regression is 6.045e-14 which much lower than the threshold of 0.05, so that suggests the variables wave2t and wave3t are jointly significant in explaining the variation in log(avgprct). This means that the wave heights over the past several days have a statistically significant combined effect on the logarithm of the average price, indicating that these variables are important predictors in the model and likely influence fish prices due to their impact on supply conditions. A low p-value suggests that it's unlikely we'd observe such data if wave heights truly had no effect, leading us to reject the null hypothesis and conclude that the wave measures do indeed play a role in determining fish prices.
+
+
+## Question 5
+
+### Part 5-A
+
+Now estimate the demand equation by 2SLS. Consider four cases: (1) $wave2_t$ is used as the only instrument for price, (2) $wave3_t$ is used as the only IV, (3) both wave variables are used as the IVs, and (4) $wave2_t$, $wave3_t$, $speed2_t$, and $speed3_t$ are used as IVs. Present your regression results and report the robust standard errors in one table. 
+
+```{r, warning=F}
+case1 = ivreg(log(totqtyt) ~ log(avgprct) + mon + tues + wed + thurs | wave2 + mon + tues + wed + thurs, data = final_data)
+
+case2 = ivreg(log(totqtyt) ~ log(avgprct) + mon + tues + wed + thurs | wave3 + mon + tues + wed + thurs, data = final_data)
+
+case3 = ivreg(log(totqtyt) ~ log(avgprct) + mon + tues + wed + thurs | wave2 + wave3 + mon + tues + wed + thurs, data = final_data)
+
+case4 = ivreg(log(totqtyt) ~ log(avgprct) + mon + tues + wed + thurs | wave2 + wave3 + speed2 + speed3 + mon + tues + wed + thurs, data = final_data)
+
+robust_se1 = coeftest(case1, vcov = vcovHC(case1, type = "HC1"))
+robust_se2 = coeftest(case2, vcov = vcovHC(case2, type = "HC1"))
+robust_se3 = coeftest(case3, vcov = vcovHC(case3, type = "HC1"))
+robust_se4 = coeftest(case4, vcov = vcovHC(case4, type = "HC1"))
+```
+
+```{r}
+stargazer(case1, case2, case3, case4, type = "text",se = list(sqrt(diag(vcovHC(case1, type = "HC1"))), sqrt(diag(vcovHC(case2, type = "HC1"))),sqrt(diag(vcovHC(case3, type = "HC1"))), sqrt(diag(vcovHC(case4, type = "HC1")))), title = "Regression Results with Robust Standard Errors")
+```
+
+
+### Part 5-B
+
+What is the 95% confidence interval for the price elasticity of demand? 
+
+```{r}
+coef_estimate_1 = coef(case1)["log(avgprct)"]
+lower_bound_1 = coef_estimate_1 - 1.96 * robust_se1
+upper_bound_1 = coef_estimate_1 + 1.96 * robust_se1
+
+coef_estimate_2 = coef(case2)["log(avgprct)"]
+lower_bound_2 = coef_estimate_2 - 1.96 * robust_se2
+upper_bound_2 = coef_estimate_2 + 1.96 * robust_se2
+
+coef_estimate_3 = coef(case3)["log(avgprct)"]
+lower_bound_3 = coef_estimate_3 - 1.96 * robust_se3
+upper_bound_3 = coef_estimate_3 + 1.96 * robust_se3
+
+coef_estimate_4 = coef(case4)["log(avgprct)"]
+lower_bound_4 = coef_estimate_4 - 1.96 * robust_se4
+upper_bound_4 = coef_estimate_4 + 1.96 * robust_se4
+```
+
+95% confidence interval gives a range within which the true price elasticity is expected to lie with 95% confidence.
+
+### Part 5-C
+
+Is the estimated elasticity reasonable? Does the estimated elasticity vary by the choice of the instruments?
+
+Compare the estimated elasticity to typical values in economic literature. Elasticities greater than 1 or less than -1 indicate relatively elastic demand, values between 0 and -1 suggest inelastic demand, therefore, I believe the estimated elasticity is reasonable. The stability of the estimated elasticity across different sets of instruments provides insights into the validity of the instruments and the robustness of the model's assumptions. There does seem to be variation between each case above.
+
+
+## Question 6
+
+Does the price elasticity differ between Asians and non-Asians? Build your regression model, estimate it, and report the regression results in one table. Interpret the results.
+
+```{r, warning=F}
+model = lm(log(totqtyt) ~ log(avgprct) + asian + log(avgprct):asian + mon + tues + wed + thurs, data = final_data)
+stargazer(model, type = "text", header = FALSE)
+```
+
+The interaction between log(avgprct) and the asian dummy variable) is 0 based on the coefficient of log(avgprct):asian and seems to not be statistically significant in the regression model, it indicates that the price elasticity of demand does not significantly differ between Asian and non-Asian buyers. In other words, both groups respond similarly to price changes when it comes to the quantity demanded. This result suggests that the effect of price on demand is uniform across these buyer groups, without evidence to support that one group is more sensitive to price changes than the other within the context of your study.

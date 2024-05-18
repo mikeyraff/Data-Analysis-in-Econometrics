@@ -1,0 +1,121 @@
+---
+title: "Econ 695 Problem Set 4"
+output: pdf_document
+---
+
+Your name: Michael Raffanti
+
+Your NetID: raffanti
+
+## Load the data and the packages
+
+To begin with, load the data (and the packages necessary for your work).
+
+
+```{r, message = FALSE}
+library(dplyr)
+library(stargazer)
+library(plm)
+setwd("/Users/mikeyraffanti/Documents/econ695/Problem Set 4")
+data = read.csv("xu_data.csv")
+```
+
+
+## Question 1
+
+Replicate the first two columns of Panel A in Table 1 of the paper (for pooled years). \textit{Be sure to check out the notes in the question.}
+
+```{r}
+full_data = data %>% filter(full == 1)
+
+governor_means = full_data %>%
+  group_by(aid) %>%
+  summarise(
+    mean_peerage = mean(peerage, na.rm = TRUE),
+    mean_civilservant = mean(civilservant, na.rm = TRUE),
+    mean_politician = mean(politician, na.rm = TRUE),
+    mean_military = mean(military, na.rm = TRUE),
+    mean_eton = mean(eton, na.rm = TRUE),
+    mean_oxford = mean(oxford, na.rm = TRUE),
+    mean_cambridge = mean(cambridge, na.rm = TRUE),
+    mean_age_entry = mean(age_entry, na.rm = TRUE),
+    mean_years_served = mean(duration, na.rm = TRUE),
+    mean_colonies_served = mean(no_colonies, na.rm = TRUE)
+  )
+
+final_results = governor_means %>%
+  summarise(
+    mean_mean_peerage = mean(mean_peerage),
+    sd_mean_peerage = sd(mean_peerage),
+    mean_mean_civilservant = mean(mean_civilservant),
+    sd_mean_civilservant = sd(mean_civilservant),
+    mean_mean_politician = mean(mean_politician),
+    sd_mean_politician = sd(mean_politician),
+    mean_mean_military = mean(mean_military),
+    sd_mean_military = sd(mean_military),
+    mean_mean_eton = mean(mean_eton),
+    sd_mean_eton = sd(mean_eton),
+    mean_mean_oxford = mean(mean_oxford),
+    sd_mean_oxford = sd(mean_oxford),
+    mean_mean_cambridge = mean(mean_cambridge),
+    sd_mean_cambridge = sd(mean_cambridge),
+    mean_mean_age_entry = mean(mean_age_entry),
+    sd_mean_age_entry = sd(mean_age_entry),
+    mean_mean_years_served = mean(mean_years_served),
+    sd_mean_years_served = sd(mean_years_served),
+    mean_mean_colonies_served = mean(mean_colonies_served),
+    sd_mean_colonies_served = sd(mean_colonies_served),
+    count = n()
+  )
+print(final_results)
+```
+
+
+## Question 2
+
+Replicate Table 2 of the paper. \textit{Be sure to check out the notes in the question.}
+
+```{r}
+pdata = pdata.frame(full_data, index = c("aid", "year"))
+formula = log_salary_governor_gbp ~ no_colonies + shared_ancestry + both_arist + both_eton + both_oxbridge + connected
+model1 = plm(formula, data = pdata, model = "within", effect = "time")
+
+formula_with_fe <- update(formula, . ~ . + factor(aid))
+model2 = plm(formula_with_fe, data = pdata, model = "within", effect = "twoways")
+
+summary(model1)
+summary(model2)
+
+stargazer(model1, model2, type = "text",
+          title = "Table 2 — Governor Salary and Connectedness to Secretary of State",
+          omit.stat = "all",
+          add.lines = list(c("Observations", nrow(pdata))),
+          single.row = TRUE)
+```
+
+
+## Question 3
+
+What if the governor fixed effects are not included in the regressions? What if the year fixed effects are not included in the regressions? Specifically, provide the regression results based on the specification (6) of Table 2, along with two alternative specifications where one has the identical specification of (6) except that the governor fixed effects are not included, and in the other specification, the year fixed effects are not included. Discuss your findings using the concept of omitted variable bias. In answering this question, reading pages 11-13 of the paper will be very helpful – the author explains why including these fixed effects is important.
+
+```{r}
+formula_spec6 = log_salary_governor_gbp ~ connected
+
+model3 = plm(formula_spec6, data = pdata, model = "within", effect = "twoways")
+model4 = plm(formula_spec6, data = pdata, model = "within", effect = "time")
+model5 = plm(formula_spec6, data = pdata, model = "within", effect = "individual")
+
+summary(model3)
+summary(model4)
+summary(model5)
+
+stargazer(model3, model4, model5, type = "text",
+          title = "Regression Results for Governor Salary and Connectedness",
+          omit.stat = "all",
+          add.lines = list(c("Observations", nrow(pdata))),
+          single.row = TRUE)
+```
+
+*Answer:* 
+
+Model 1 includes both governor and year fixed effects and gives an estimated effect of being connected on governor's salary as 0.073 with a standard error of 0.022, which is statistically significant at the 1% level. This model controls for both time-invariant characteristics of the governors and from temporal shocks, which provides a more controlled measure of the connectedness effect. Model 2 omits governor fixed effects and includes only year fixed effects and shows a much larger estimated effect of 0.505 with a standard error of 0.029, also statistically significant at the 1% level. The large coefficient here suggests that governor fixed effects were controlling for some important unobserved variables that are correlated with both the salaries and connectedness. Finally, Model 3 omits year fixed effect but includes governor fixed effects, which gives an estimated effect of being connection as 0.117, with a standard error of 0.026, which again is statistically significant at the 1% level. The coefficient is larger than Model 1 but smaller than Model 2, which means that year fixed effects were also controlling for some important factors that affect all governors' salaries in a given year.

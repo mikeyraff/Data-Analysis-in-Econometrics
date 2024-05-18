@@ -1,0 +1,147 @@
+---
+title: "Econ 695 Problem Set 1"
+output: pdf_document
+---
+
+Your name: Michael Raffanti
+
+Your NetID: raffanti
+
+## Load the data and the packages
+
+To begin with, load the data (and the packages necessary for your work).
+
+```{r, message = FALSE}
+setwd("/Users/mikeyraffanti/Documents/econ695/Problem Set 1")
+data = read.csv("rosca.csv", header = TRUE, sep = ",")
+```
+
+## Question 1
+
+Create a variable `treatment` that takes the value `control` if receiving only encouragement, `safebox` if receiving a safe box,  and `lockbox` if receiving a locked box. How many individuals are in the control group? How many individuals are in each of the treatment arms?
+```{r}
+data$treatment = ifelse(data$encouragement == 1, 'control', ifelse(data$safe_box == 1, 'safebox', 'lockbox'))
+table(data$treatment)
+```
+
+*Answer:*
+
+## Question 2
+      
+Focus on the observations where participants who were interviewed in 12 months during the second followup only.  We will use these observations for the subsequent analyses. 
+
+### Part 2-A
+
+How many participants are left in each group of this subset of the data?  
+
+```{r}
+subset = data[data$has_followup2 == 1, ]
+counts = table(subset$treatment)
+print(counts)
+```
+
+*Answer:* 
+
+
+### Part 2-B
+Does the drop-out rate differ across the treatment conditions? *Recall that when comparing means, you are expected to discuss statistical significance of the difference.*
+
+```{r}
+totals = table(data$treatment)
+dropout_rate = (totals - counts) / totals
+print(dropout_rate)
+```
+
+*Answer:* 
+
+
+### Part 2-C
+What does this result suggest about the internal and external validity of this study? 
+
+Based on the result, if the dropout rates are significantly different across the treatment groups, then it could indicate that the treatment itself might be influencing the likelihood of participants staying in the study, which affects internal validity. Furthermore, if the dropout rate is high or varies across groups, it can mean that the sample at the second follow-up is not a good representation of the broader population, which impacts external validity.
+
+*Answer:* 
+
+
+## Question 3
+
+Does receiving a safe box increase the amount invested in health products? We focus on the outcome measured 12 months from baseline during the second follow-up.
+
+
+### Part 3-A
+
+Compare the mean of amount (in Kenyan shilling) invested in health products `fol2_amtinvest` between each of the treatment arms and the control group. *Recall that when comparing means, you are expected to discuss statistical significance of the difference.*
+
+```{r}
+subset = data[data$has_followup2 == 1, ]
+mean_control = mean(subset$fol2_amtinvest[subset$treatment == "control"], na.rm = TRUE)
+mean_safebox = mean(subset$fol2_amtinvest[subset$treatment == "safebox"], na.rm = TRUE)
+mean_lockbox = mean(subset$fol2_amtinvest[subset$treatment == "lockbox"], na.rm = TRUE)
+print(mean_control)
+print(mean_safebox)
+print(mean_lockbox)
+```
+
+*Answer:* 
+
+
+### Part 3-B
+
+Repeat the exercise by running a regression.
+
+```{r}
+model = lm(fol2_amtinvest ~ treatment, data = subset)
+summary(model)
+```
+
+
+### Part 3-C
+
+By comparing the means, we observe whether the average investment in health products is higher for participants with a safe box or those in the control group. The regressions provides coefficients for each treatment category compared to the control group, and it'll show how much more on average those with safe boxes will invest in health products. Both analyses, the p-vallues are useful for determining whether changes were due to chance. Based on that information, since the mean investment and regression coefficient for the safe box are higher than the control group, and statistically significant, it means receiving a safe box does increase the amount invested in health products.
+
+*Answer:* 
+
+
+## Question 4
+
+Examine the balance of pre-treatment variables, gender (`bg_female`), age (`bg_b1_age`) and marital status (`bg_married`). 
+
+### Part 4-A
+
+Are participants in the two treatment groups different from those in the control group?  *Recall that when comparing means, you are expected to discuss statistical significance of the difference.* 
+
+```{r}
+tapply(data$bg_female, data$treatment, mean)
+tapply(data$bg_b1_age, data$treatment, mean)
+tapply(data$bg_married, data$treatment, mean)
+```
+*Answer:* 
+
+
+### Part 4-B
+
+What does the result of this analysis suggest in terms of the internal validity of the finding presented in the previous question?
+
+Since the means of these treatment variables are similar, it suggests that the randomization was effective and the groups are comparable. This strengthens the internal validity of the results because it shows that the differences observed in the outcomes are more likely due to the treatment rather than pre-existing differences.
+
+*Answer:* 
+
+
+
+## Question 5
+
+### Part 5-A
+
+Does receiving a safe box or a locked box have different effects on the investment of males versus females? To answer this question, build a regression model and run the regression. 
+
+```{r}
+model = lm(fol2_amtinvest ~ treatment * bg_female, data = data)
+summary(model)
+```
+
+
+### Part 5-B
+
+Based on the results of the regression, we can draw conclusion about gender differences based on the treatment received. For the safe box, it is significant because the p-value is less than 0.05 and has a positive coefficient. This indicates that for females, receiving a safe box increased their investment in health products compared to males with a safe box. For the locked box, it is not significant since the p-value is greater than 0.05, so this suggests that the effect of receiving a locked box on investment in health products does not differ significantly between males and females.
+
+*Answer:* 

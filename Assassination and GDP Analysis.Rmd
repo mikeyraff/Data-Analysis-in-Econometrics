@@ -1,0 +1,384 @@
+---
+title: "ECON 695 Final Project"
+output: pdf_document
+date: "2024-04-10"
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(haven)
+library(knitr)
+library(tibble)
+library(rlang)
+library(stringr)
+library(httr)
+library(tidyr)
+library(data.table)
+assassinations_data = read_dta("assassinations_data.dta")
+merged_data = read_dta("mergeddata.dta")
+gdp_data = read.csv("GDP_data.csv")
+```
+
+```{r}
+# Table 2 Work
+assassinations_data <- assassinations_data %>%
+  mutate(
+    gun = as.integer(weapon1 == 1 | weapon2 == 1 | weapon3 == 1),
+    bomb = as.integer(weapon1 == 3 | weapon2 == 3 | weapon3 == 3),
+    knife = as.integer(weapon1 == 2 | weapon2 == 2 | weapon3 == 2),
+    other = as.integer(weapon1 %in% c(4, 8) | weapon2 %in% c(4, 8) | weapon3 %in% c(4, 8)),
+    unknown = as.integer(weapon1 == 9 | weapon2 == 9 | weapon3 == 9),
+    abroad = as.integer(!is.na(loccntry) & loccntry != country & loccntry != "" & country != ""),
+    home = 1 - abroad,
+    solo = as.integer(!is.na(solo) & solo == 1),
+    group = as.integer(solo == 0)
+  )
+
+calculate_summary <- function(data, var) {
+  data %>%
+    filter(.data[[var]] == 1) %>%
+    summarise(
+      Attempts = n(),
+      Success_Rate = mean(success, na.rm = TRUE),
+      Serious_Attempts = sum(serious, na.rm = TRUE), 
+      Success_Rate_Serious = mean(success[serious == 1], na.rm = TRUE), 
+      Mean_Killed = mean(deadinattempt, na.rm = TRUE),
+      Mean_Wounded = mean(woundedinattempt, na.rm = TRUE),
+      Percentage = Attempts / Attempts * 100 
+    ) %>%
+    mutate(
+      Variable = var,
+      Success_Rate = scales::percent(Success_Rate),
+      Success_Rate_Serious = scales::percent(Success_Rate_Serious),
+      Percentage = scales::percent(Percentage)
+    ) %>%
+    select(Variable, everything())
+  
+}
+
+variables <- c("gun", "bomb", "knife", "other", "unknown", "abroad", "home", "solo", "group")
+summary_table <- tibble()
+
+for (var in variables) {
+  temp_summary <- calculate_summary(assassinations_data, var)
+  summary_table <- bind_rows(summary_table, temp_summary)
+}
+summary_table$Percentage[1] = scales::percent(summary_table$Attempts[1] / sum(summary_table$Attempts[1:5]))
+summary_table$Percentage[2] = scales::percent(summary_table$Attempts[2] / sum(summary_table$Attempts[1:5]))
+summary_table$Percentage[3] = scales::percent(summary_table$Attempts[3] / sum(summary_table$Attempts[1:5]))
+summary_table$Percentage[4] = scales::percent(summary_table$Attempts[4] / sum(summary_table$Attempts[1:5]))
+summary_table$Percentage[5] = scales::percent(summary_table$Attempts[5] / sum(summary_table$Attempts[1:5]))
+summary_table$Percentage[6] = scales::percent(summary_table$Attempts[6] / sum(summary_table$Attempts[6:7]))
+summary_table$Percentage[7] = scales::percent(summary_table$Attempts[7] / sum(summary_table$Attempts[6:7]))
+summary_table$Percentage[8] = scales::percent(summary_table$Attempts[8] / sum(summary_table$Attempts[8:9]))
+(summary_table$Percentage[9] = scales::percent(summary_table$Attempts[9] / sum(summary_table$Attempts[8:9])))
+```
+
+```{r}
+# Table 2
+summary_table = summary_table %>% select(Variable, Attempts, Percentage, Success_Rate, Serious_Attempts, Success_Rate_Serious, Mean_Killed, Mean_Wounded)
+knitr::kable(summary_table, caption = "Summary Statistics for Assassination Attempts", align = 'c', digits = 2)
+```
+
+```{r}
+# Table 3 Work
+merged_data$perlab2 <- ifelse(merged_data$year >= 1875 & merged_data$year <= 1949, "pre 1950",
+                       ifelse(merged_data$year >= 1950 & merged_data$year <= 2004, "post 1950", "All Years"))
+```
+
+```{r}
+double_year = assassinations_data %>%
+  group_by(country, year) %>%
+  filter(n() > 1)
+```
+
+```{r}
+df_filtered <- double_year %>%
+  group_by(country, year) %>%
+  arrange(desc(success), desc(month1), desc(day)) %>%
+  slice(1) %>%
+  ungroup()
+```
+
+```{r}
+final_df <- anti_join(double_year, df_filtered)
+```
+
+```{r}
+final_adf <- anti_join(assassinations_data, final_df)
+```
+
+```{r}
+df_unique <- filter(merged_data, !is.na(result))
+```
+
+```{r}
+country_df <- semi_join(df_unique, final_adf, by = c("leadername"))
+```
+
+```{r}
+country_counts_df_unique <- country_df %>% count(leadername)
+country_counts_final_adf <- final_adf %>% count(leadername)
+```
+
+```{r}
+merged_counts <- merge(country_counts_df_unique, country_counts_final_adf, by = "leadername", suffixes = c("_df_unique", "_final_adf"))
+
+count_mismatch <- filter(merged_counts, n_df_unique != n_final_adf)
+
+print(count_mismatch)
+```
+
+```{r}
+filtered_country_df <- country_df %>%
+  group_by(cowcode) %>%
+  arrange(result) %>%
+  filter(!duplicated(year) | result < 20) %>%
+  ungroup()
+```
+
+```{r}
+filtered_merged_data <- distinct(merged_data, cowcode, year, .keep_all = TRUE)
+```
+
+```{r}
+is_nearby_year <- function(row, valid_row) {
+  abs(row$year - valid_row$year) <= 1
+}
+
+result <- data.frame()
+
+for (i in 1:nrow(filtered_country_df)) {
+  valid_row <- filtered_country_df[i, ]
+  nearby_rows <- merged_data %>%
+    filter(cowcode == valid_row$cowcode & sapply(year, function(x) is_nearby_year(list(year = x), valid_row)))
+  result <- bind_rows(result, nearby_rows)
+}
+```
+
+```{r}
+exclude_logical <- result$country != "CountryName"
+result <- result[exclude_logical, ]
+```
+
+```{r}
+library(dplyr)
+
+result <- result %>%
+  arrange(cowcode, year)
+
+result <- result %>%
+  group_by(cowcode) %>%
+  mutate(polity2_lag = lag(polity2, 2),
+         polity2_lead = lead(polity2, 2),
+         year_diff = year - lag(year, 2))
+
+result <- result %>%
+  mutate(change = case_when(
+    polity2_lag < 0 & polity2 > 0 ~ 1,
+    polity2_lag > 0 & polity2 < 0 ~ -1,
+    TRUE ~ 0
+  ))
+
+result$change <- ifelse(result$year_diff != 2, NA, result$change)
+
+```
+
+```{r}
+count_pre1950 <- sum(filtered_country_df$perlab2 == "pre 1950")
+count_pre1950
+```
+
+```{r}
+count_post1950 <- sum(filtered_country_df$perlab2 == "post 1950")
+count_post1950
+```
+
+```{r}
+count_pre1950_change_demo <- sum(result$perlab2 == "pre 1950" & (result$change == 1), na.rm = TRUE)
+count_pre1950_change_demo
+```
+
+```{r}
+count_pre1950_change_auto <- sum(result$perlab2 == "pre 1950" & (result$change == -1), na.rm = TRUE)
+count_pre1950_change_auto
+```
+
+```{r}
+count_post1950_change_demo <- sum(result$perlab2 == "post 1950" & (result$change == 1), na.rm = TRUE)
+count_post1950_change_demo
+```
+
+```{r}
+count_post1950_change_auto <- sum(result$perlab2 == "post 1950" & (result$change == -1), na.rm = TRUE)
+count_post1950_change_auto
+```
+
+```{r}
+all_years_any_change_percentage = (count_pre1950_change_demo + count_pre1950_change_auto + count_post1950_change_demo + count_post1950_change_auto) / (count_pre1950 + count_post1950)
+pre_any_change_percentage = (count_pre1950_change_demo + count_pre1950_change_auto) / count_pre1950
+post_any_change_percentage = (count_post1950_change_demo + count_post1950_change_auto) / count_post1950
+all_years_demo_percentage = (count_pre1950_change_demo + count_post1950_change_demo) / (count_pre1950 + count_post1950)
+pre_demo_percentage = count_pre1950_change_demo / count_pre1950
+post_demo_percentage = count_post1950_change_demo / count_post1950
+all_years_auto_percentage = (count_pre1950_change_auto + count_post1950_change_auto) / (count_pre1950 + count_post1950)
+pre_auto_percentage = count_pre1950_change_auto / count_pre1950
+post_auto_percentage = count_post1950_change_auto / count_post1950
+```
+
+```{r}
+summary_stats <- data.frame(
+  Pre_1950  = c(all_years_demo_percentage, pre_demo_percentage, post_demo_percentage),
+  Post_1950  = c(all_years_auto_percentage, pre_auto_percentage, post_auto_percentage),
+  All_years  = c(all_years_any_change_percentage, pre_any_change_percentage, post_any_change_percentage)
+)
+row.names(summary_stats) <- c("Any_change", "Democracy_to_autocracy", "Autocracy_to_democracy")
+summary_stats
+```
+
+```{r}
+library(dplyr)
+library(broom)
+library(lmtest)
+library(sandwich)
+library(tidyr)
+library(knitr)
+library(zoo)
+```
+
+```{r}
+combined_data <- merge(assassinations_data, merged_data, by = "obsid")
+```
+
+```{r}
+combined_data <- combined_data %>%
+  mutate(
+    absnpolity2dummy11 = ifelse(polity2 != lag(polity2, default = first(polity2)), 1, 0),
+    npolity2dummy11 = case_when(
+      polity2 > lag(polity2, default = first(polity2)) ~ 1,
+      polity2 == lag(polity2, default = first(polity2)) ~ 0,
+      polity2 < lag(polity2, default = first(polity2)) ~ -1
+    ),
+    perexitregularNC201 = 100 * sum(exit == "regular" & year.y > year.y + 1, na.rm = TRUE) / n(),
+    successlautoc = ifelse(polity2 < 0 & success == 1, 1, 0),
+    successldemoc = ifelse(polity2 > 0 & success == 1, 1, 0)
+  )
+```
+
+```{r}
+fixedeffectvars <- c("weapon1.x", "weapon2.x", "weapon3.x", "numseriousattemptsleaderyear")
+```
+
+```{r}
+library(dplyr)
+library(knitr)
+filtered_data <- combined_data %>%
+  select(
+    obsid, cowcode, numseriousattemptsleaderyear, success, 
+    absnpolity2dummy11, npolity2dummy11, perexitregularNC201, 
+    successlautoc, successldemoc, weapon1.x, weapon2.x, weapon3.x
+  ) %>%
+  filter(numseriousattemptsleaderyear > 0) %>%
+  mutate(
+    weapon1.x = as.factor(weapon1.x),
+    weapon2.x = as.factor(weapon2.x),
+    weapon3.x = as.factor(weapon3.x)
+  )
+```
+
+```{r}
+summary_stats <- filtered_data %>%
+  summarise(
+    mean_absnpolity2dummy11 = mean(absnpolity2dummy11, na.rm = TRUE),
+    mean_npolity2dummy11 = mean(npolity2dummy11, na.rm = TRUE),
+    mean_perexitregularNC201 = mean(perexitregularNC201, na.rm = TRUE),
+    count_success = sum(success, na.rm = TRUE),
+    count_total = n()
+  )
+
+kable(
+  summary_stats, 
+  caption = "Summary Statistics for Assassination Attempts",
+  digits = 3, 
+  format = "html"
+)
+```
+
+```{r}
+tabulate_success <- function(variable) {
+  tabulated <- filtered_data %>%
+    group_by_at(variable) %>%
+    summarise(
+      count = n(),
+      success_rate = mean(success, na.rm = TRUE)
+    )
+  
+  kable(
+    tabulated, 
+    caption = paste("Tabulation of Success by", variable),
+    digits = 3, 
+    format = "html"
+  )
+}
+
+tabulate_success("weapon1.x")
+tabulate_success("weapon2.x")
+tabulate_success("weapon3.x")
+tabulate_success("successlautoc")
+tabulate_success("successldemoc")
+```
+
+
+```{r}
+# GDP Regression Work
+new_gdp_data <- gdp_data[gdp_data$Country.Name %in% assassinations_data$country, ]
+new_assassinations_data = assassinations_data %>% filter(year >= 1960)
+```
+
+```{r}
+colnames(new_gdp_data) <- gsub("^X", "", colnames(new_gdp_data))
+```
+
+```{r}
+new_df <- data.frame(country=new_assassinations_data$country, attempt_year = new_assassinations_data$year)
+gdp_pres = c()
+gdp_posts = c()
+
+for (c in 1:nrow(new_gdp_data)) {
+  for (i in 1:nrow(new_assassinations_data)) {
+    
+    country <- new_df$country[i]
+    year <- as.character(new_df$attempt_year[i])
+    nyear <- as.character(as.integer(year) + 1)
+    
+    if (new_gdp_data$Country.Name[c] == country && year %in% names(new_gdp_data)) {
+      gdp_value <- new_gdp_data[c, year]
+      gdp_new_value <- new_gdp_data[c, nyear]
+      shift = gdp_new_value - gdp_value
+      if (length(shift) != 0){
+        new_df$gdp_shift[i] <- shift
+        gdp_pres[i] = gdp_value
+        gdp_posts[i] = gdp_new_value
+      }
+    }
+  }
+}
+gdp_pres <- gdp_pres %>% replace(is.na(.), 0)
+gdp_posts <- gdp_posts %>% replace(is.na(.), 0)
+gdp_pres_avg = sum(gdp_pres)/length(gdp_pres)
+gdp_posts_avg = sum(gdp_posts)/length(gdp_posts)
+cat("treat_pre: ", gdp_pres_avg, "\n")
+cat("treat_post: ", gdp_posts_avg, "\n")
+cat("post - pre = ", gdp_posts_avg - gdp_pres_avg, "\n")
+
+non_zero_control_98 <- new_gdp_data$"1978"[new_gdp_data$"1978" != 0]
+c98 = sum(non_zero_control_98)/length(non_zero_control_98)
+cat("98 control: ", c98, "\n")
+non_zero_control_97 <- new_gdp_data$"1977"[new_gdp_data$"1977" != 0]
+c97 = sum(non_zero_control_97)/length(non_zero_control_97)
+cat("97 control: ", c97, "\n")
+cat("c98 - c97 = ", c98-c97, "\n\n")
+
+cat("DND: ", (c98-c97) - (gdp_posts_avg - gdp_pres_avg), "\n\n")
+
+```

@@ -1,0 +1,84 @@
+---
+title: "Catching up with R"
+author: "Econ 695"
+date: "Spring 2024"
+output: pdf_document
+---
+
+## Load the data and the packages
+
+To begin with, load the data (and the packages necessary for your work).
+
+```{r, message = FALSE}
+# load packages
+library(tidyverse)
+library(stargazer)
+# load data
+resume <- read.csv("resume.csv")
+```
+
+
+## Check the data
+
+You can use view() function or simply double-click the dataframe on the right panel.
+
+```{r}
+# How many observations are female?
+table(resume$sex)
+# How many observatles are female and white?
+table(resume$sex,resume$race)
+```
+
+
+## Create variables
+
+```{r}
+# generate a dummy for female
+resume$female <- 0
+resume$female[resume$sex=="female"] <- 1
+resume$female <- as.factor(resume$female)
+```
+
+
+## Comparing means
+
+```{r}
+# Are callback rates different by race?
+tapply(resume$call, resume$race, mean)
+summarize(group_by(resume,race),mean(call))
+# t-test
+t.test(resume$call[resume$race=="white"],resume$call[resume$race=="black"])
+# t-stat?
+t.test(resume$call[resume$race=="white"],resume$call[resume$race=="black"])$statistic
+```
+
+
+## Running regression
+
+```{r}
+# Are callback rates differt by race? (reprise)
+fit <- lm(call~race, data = resume)
+summary(fit)
+# Is the effect of race on callback rates different by gender?
+fit2 <- lm(call~race*sex, data = resume)
+summary(fit2)
+```
+
+
+## Stargzer
+
+Using the stargazer package, you can present multiple regression results in a table, in a compact manner.
+
+```{r, message = FALSE, warning = FALSE}
+stargazer(fit, fit2, type="text")
+stargazer(fit, fit2, type= "text",
+          title = "Effects of Race on Callback rates",
+          covariate.labels = c("White", "Male", "White x Male"),
+          dep.var.caption = "Dependent variable: Received a callback or not",
+          dep.var.labels.include = FALSE,
+          model.names = NULL,
+          omit.stat = c("ser", "f"),
+          omit = c("Constant"),
+          notes = "More notes.", notes.align = "r",
+          header = FALSE)
+```
